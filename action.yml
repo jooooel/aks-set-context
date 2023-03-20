@@ -19,6 +19,14 @@ inputs:
       description: 'Enables kubelogin for non-admin user scenario. Values: true or false'
       default: false
       required: false
+   retries:
+      description: 'Number of times to retry setting the context'
+      default: 0
+      required: false
+   retry-delay:
+      description: 'Time to wait (in ms) between retries'
+      default: 0
+      required: false
 branding:
    color: 'green'
 runs:

@@ -172,4 +172,50 @@ describe('Set context', () => {
       expect(fs.chmodSync).toBeCalledWith(kubeconfigPath, '600')
       expect(core.exportVariable).toBeCalledWith('KUBECONFIG', kubeconfigPath)
    })
+
+   it('retries getting the kubeconfig on exception', async () => {
+      jest.spyOn(core, 'getInput').mockImplementation((inputName, options) => {
+         if (inputName == 'resource-group') return resourceGroup
+         if (inputName == 'cluster-name') return clusterName
+         if (inputName == 'retries') return '1'
+         if (inputName == 'retry-delay') return '0'
+      })
+      jest.spyOn(io, 'which').mockImplementation(async () => azPath)
+      process.env['RUNNER_TEMP'] = runnerTemp
+      jest.spyOn(Date, 'now').mockImplementation(() => date)
+      jest
+         .spyOn(exec, 'exec')
+         .mockImplementationOnce(async () => {
+            throw new Error('asd')
+         })
+         .mockImplementationOnce(async () => 0)
+      jest.spyOn(fs, 'chmodSync').mockImplementation()
+      jest.spyOn(core, 'exportVariable').mockImplementation()
+      jest.spyOn(core, 'debug').mockImplementation()
+
+      await expect(run()).resolves.not.toThrowError()
+      expect(exec.exec).toBeCalledTimes(2)
+   })
+
+   it('retries getting the kubeconfig on unsuccessful return code', async () => {
+      jest.spyOn(core, 'getInput').mockImplementation((inputName, options) => {
+         if (inputName == 'resource-group') return resourceGroup
+         if (inputName == 'cluster-name') return clusterName
+         if (inputName == 'retries') return '1'
+         if (inputName == 'retry-delay') return '0'
+      })
+      jest.spyOn(io, 'which').mockImplementation(async () => azPath)
+      process.env['RUNNER_TEMP'] = runnerTemp
+      jest.spyOn(Date, 'now').mockImplementation(() => date)
+      jest
+         .spyOn(exec, 'exec')
+         .mockImplementationOnce(async () => 100)
+         .mockImplementationOnce(async () => 0)
+      jest.spyOn(fs, 'chmodSync').mockImplementation()
+      jest.spyOn(core, 'exportVariable').mockImplementation()
+      jest.spyOn(core, 'debug').mockImplementation()
+
+      await expect(run()).resolves.not.toThrowError()
+      expect(exec.exec).toBeCalledTimes(2)
+   })
 })

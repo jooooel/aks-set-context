@@ -34,6 +34,8 @@ export async function run() {
       const admin = adminInput.toLowerCase() === 'true'
       const useKubeLoginInput = core.getInput('use-kubelogin') || ''
       const useKubeLogin = useKubeLoginInput.toLowerCase() === 'true' && !admin
+      const retries = +core.getInput('retries') || 0
+      const retryDelay = +core.getInput('retry-delay') || 0
 
       // check az tools
       const azPath = await io.which(AZ_TOOL_NAME, false)
@@ -62,7 +64,11 @@ export async function run() {
       if (subscription) cmd.push('--subscription', subscription)
       if (admin) cmd.push('--admin')
 
-      const exitCode = await exec.exec(AZ_TOOL_NAME, cmd)
+      const exitCode = await retry(
+         () => exec.exec(AZ_TOOL_NAME, cmd),
+         retries,
+         retryDelay
+      )
       if (exitCode !== 0)
          throw Error('az cli exited with error code ' + exitCode)
 
@@ -76,9 +82,10 @@ export async function run() {
       if (useKubeLogin) {
          const kubeloginCmd = ['convert-kubeconfig', '-l', 'azurecli']
 
-         const kubeloginExitCode = await exec.exec(
-            KUBELOGIN_TOOL_NAME,
-            kubeloginCmd
+         const kubeloginExitCode = await retry(
+            () => exec.exec(KUBELOGIN_TOOL_NAME, kubeloginCmd),
+            retries,
+            retryDelay
          )
          if (kubeloginExitCode !== 0)
             throw Error('kubelogin exited with error code ' + exitCode)
@@ -89,6 +96,50 @@ export async function run() {
       core.exportVariable(AZ_USER_AGENT_ENV, originalAzUserAgent)
       core.exportVariable(AZ_USER_AGENT_ENV_PS, originalAzUserAgentPs)
    }
+}
+
+async function retry(
+   action: () => Promise<number>,
+   retries: number,
+   retry_delay: number
+): Promise<number> {
+   var exitCode: number
+   for (let attempt = 1; attempt <= retries + 1; attempt++) {
+      const retry = attempt <= retries
+
+      try {
+         exitCode = await action()
+
+         if (exitCode == 0 || !retry) {
+            // Success or no more retries, return exit code
+            return exitCode
+         }
+
+         core.warning('action failed with error code ' + exitCode)
+      } catch (error) {
+         if (retry) {
+            core.warning('action failed with error: ' + error)
+         } else {
+            throw error
+         }
+      }
+
+      core.info(
+         'attempt ' +
+            attempt +
+            ' failed, retrying action in ' +
+            retry_delay +
+            'ms...'
+      )
+      await delay(retry_delay)
+   }
+
+   const errorMessage = 'az cli exited with error code ' + exitCode
+   throw Error(errorMessage)
+}
+
+async function delay(ms: number) {
+   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function getUserAgent(prevUserAgent: string): string {
